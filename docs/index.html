@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CDA2MP3 Studio — CD 抓轨转 MP3 · CD 播放器 · .cda 识别</title>
+<meta name="description" content="Windows 单文件工具:CD 无损抓轨转 MP3(320kbps)、CD 实时播放器、.cda 文件识别三合一。免安装、离线可用、开源。">
+<style>
+  :root {
+    --bg: #0f1119; --bg2: #161923; --card: #1a1e2a; --line: #262c3d;
+    --text: #e6e9f2; --muted: #8b93a7; --accent: #5b7cfa; --accent2: #7c5cff;
+    --green: #22c55e;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.7;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  nav {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(15,17,25,.85); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  nav .wrap { display: flex; align-items: center; gap: 14px; height: 62px; }
+  nav img { width: 34px; height: 34px; border-radius: 9px; }
+  nav .brand { font-weight: 800; font-size: 17px; }
+  nav .links { margin-left: auto; display: flex; gap: 22px; font-size: 14px; }
+  nav .links a { color: var(--muted); }
+  nav .links a:hover { color: var(--text); text-decoration: none; }
+
+  header { padding: 84px 0 60px; text-align: center; position: relative; overflow: hidden; }
+  header::before {
+    content: ""; position: absolute; inset: -40% -20% auto; height: 130%;
+    background:
+      radial-gradient(600px 300px at 30% 30%, rgba(91,124,250,.16), transparent 60%),
+      radial-gradient(500px 300px at 72% 45%, rgba(124,92,255,.14), transparent 60%);
+    pointer-events: none;
+  }
+  header .wrap { position: relative; }
+  h1 { font-size: 46px; font-weight: 900; letter-spacing: .5px; margin: 18px 0 10px; }
+  h1 .grad {
+    background: linear-gradient(100deg, #5b7cfa, #7c5cff 55%, #c45cff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .tagline { color: var(--muted); font-size: 18px; max-width: 640px; margin: 0 auto 30px; }
+  .badges { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-bottom: 34px; }
+  .badge {
+    font-size: 12.5px; color: var(--muted); border: 1px solid var(--line);
+    padding: 5px 13px; border-radius: 999px; background: var(--bg2);
+  }
+  .cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: 13px 30px; border-radius: 12px;
+    font-weight: 700; font-size: 15.5px; transition: .18s;
+  }
+  .btn:hover { text-decoration: none; transform: translateY(-2px); }
+  .btn-primary {
+    background: linear-gradient(120deg, var(--accent), var(--accent2));
+    color: #fff; box-shadow: 0 8px 28px rgba(91,124,250,.35);
+  }
+  .btn-ghost { border: 1px solid var(--line); color: var(--text); background: var(--card); }
+
+  section { padding: 58px 0; }
+  .sec-title { font-size: 30px; font-weight: 800; text-align: center; margin-bottom: 8px; }
+  .sec-sub { text-align: center; color: var(--muted); margin-bottom: 40px; }
+
+  .shot {
+    border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
+    box-shadow: 0 24px 70px rgba(0,0,0,.5); background: var(--card);
+  }
+  .shot img { width: 100%; display: block; }
+  .shot figcaption { text-align: center; color: var(--muted); font-size: 13.5px; padding: 10px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+  .feat {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 24px 22px; transition: .18s;
+  }
+  .feat:hover { border-color: #3c4460; transform: translateY(-3px); }
+  .feat .ico { font-size: 28px; margin-bottom: 10px; }
+  .feat h3 { font-size: 16.5px; margin-bottom: 6px; }
+  .feat p { color: var(--muted); font-size: 14px; }
+
+  .callout {
+    background: linear-gradient(120deg, rgba(91,124,250,.10), rgba(124,92,255,.08));
+    border: 1px solid rgba(91,124,250,.35); border-radius: 16px;
+    padding: 30px 34px; margin-top: 8px;
+  }
+  .callout h3 { font-size: 20px; margin-bottom: 10px; }
+  .callout p { color: #c3cade; font-size: 15px; }
+  .callout b { color: #fff; }
+  code {
+    font-family: Consolas, monospace; font-size: 13px;
+    background: #141824; border: 1px solid var(--line);
+    padding: 2px 7px; border-radius: 6px;
+  }
+  pre {
+    background: #141824; border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px 20px; overflow-x: auto; font-size: 13.5px; margin-top: 14px;
+    font-family: Consolas, monospace; color: #c3cade;
+  }
+  .steps { counter-reset: s; margin-top: 18px; }
+  .step { display: flex; gap: 14px; margin-bottom: 14px; align-items: flex-start; }
+  .step .n {
+    counter-increment: s; flex: 0 0 30px; height: 30px; border-radius: 50%;
+    background: linear-gradient(120deg, var(--accent), var(--accent2));
+    display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px;
+  }
+  .step .n::before { content: counter(s); }
+
+  footer { border-top: 1px solid var(--line); padding: 30px 0 40px; text-align: center; color: var(--muted); font-size: 14px; }
+  @media (max-width: 640px) {
+    h1 { font-size: 34px; }
+    nav .links { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <img src="icon.png" alt="logo">
+    <span class="brand">CDA2MP3 Studio</span>
+    <div class="links">
+      <a href="#features">功能</a>
+      <a href="#cda">关于 .cda</a>
+      <a href="#start">快速开始</a>
+      <a href="https://github.com/Jensen-Yao/cda2mp3">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<header>
+  <div class="wrap">
+    <img src="icon.png" width="92" style="border-radius:22px" alt="CDA2MP3 Studio 图标">
+    <h1>CD 抓轨 · 播放 · <span class="grad">.cda 识别</span></h1>
+    <p class="tagline">一个 Windows 单文件工具,搞定音频 CD 的所有事:SPTI 无损抓轨转 320kbps MP3、实时 CD 播放器、全网都在踩坑的 .cda 文件智能识别。</p>
+    <div class="badges">
+      <span class="badge">🪟 Windows 10 / 11</span>
+      <span class="badge">📦 免安装 · 单文件 EXE</span>
+      <span class="badge">🔌 离线可用 · 零第三方 DLL</span>
+      <span class="badge">🆓 MIT 开源</span>
+    </div>
+    <div class="cta">
+      <a class="btn btn-primary" href="https://github.com/Jensen-Yao/cda2mp3/releases/latest">⬇️ 下载 EXE</a>
+      <a class="btn btn-ghost" href="https://github.com/Jensen-Yao/cda2mp3">⭐ GitHub 仓库</a>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <figure class="shot">
+      <img src="main.png" alt="CDA2MP3 Studio 主界面">
+      <figcaption>主界面 —— 音轨清单 · 播放控制 · 转换设置一体布局</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <h2 class="sec-title">功能特性</h2>
+    <p class="sec-sub">抓轨、播放、识别,一个窗口全部完成</p>
+    <div class="grid">
+      <div class="feat"><div class="ico">🎧</div><h3>CD 实时播放器</h3><p>插入 CD 自动识别,播放/暂停/切轨/进度拖动/音量调节,后台预读不卡顿。</p></div>
+      <div class="feat"><div class="ico">⚡</div><h3>无损抓轨 → MP3</h3><p>SPTI 直读光驱原始 2352 字节音频扇区,LAME 编码 320kbps,实测 20–50× 实时速度。</p></div>
+      <div class="feat"><div class="ico">💿</div><h3>.cda 智能识别</h3><p>拖入 .cda 快捷方式即可解析轨号与时长;放入原盘自动衔接,一键抓取。</p></div>
+      <div class="feat"><div class="ico">🏷️</div><h3>CD-Text + ID3 标签</h3><p>自动读取专辑/艺术家/曲目名(支持中文),可编辑,写入 ID3v2.3 并支持嵌入封面。</p></div>
+      <div class="feat"><div class="ico">🛡️</div><h3>安全模式</h3><p>每段音频双读逐字节校验,划痕盘安心抓,坏段明确报错不静默。</p></div>
+      <div class="feat"><div class="ico">📀</div><h3>镜像支持</h3><p>没有光驱也能玩:CUE + WAV/BIN 整轨镜像当作虚拟光盘,抓轨播放全功能。</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="cda" style="background:var(--bg2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <h2 class="sec-title">为什么 .cda 文件"转"不了?</h2>
+    <p class="sec-sub">全网无数人踩过的坑,一次讲清</p>
+    <div class="callout">
+      <h3>💿 .cda 不是音频文件,是 44 字节的"快捷方式"</h3>
+      <p>Windows 为音频 CD 的每一轨生成一个 <b>.cda 索引文件</b>,里面只有<b>轨号、起始扇区、时长</b>等元信息,
+      连 1 字节的声音数据都没有。所以任何软件都无法"直接"把 .cda 转成 MP3 —— <b>真正的声音只存在于 CD 盘片上</b>。</p>
+      <p style="margin-top:10px">CDA2MP3 Studio 的解法:解析 .cda 拿到音轨清单 → 放入原版 CD → 自动比对 TOC 衔接 →
+      从光驱抓取原始音频 → 编码 MP3。桌面上那堆"打不开"的 .cda,拖进来就对了。</p>
+    </div>
+  </div>
+</section>
+
+<section id="start">
+  <div class="wrap">
+    <h2 class="sec-title">四步开始</h2>
+    <p class="sec-sub">不需要安装任何东西</p>
+    <div class="steps">
+      <div class="step"><span class="n"></span><div>从 <a href="https://github.com/Jensen-Yao/cda2mp3/releases/latest">Releases</a> 下载 <code>CDA2MP3Studio.exe</code>,双击运行(SmartScreen → 更多信息 → 仍要运行)。</div></div>
+      <div class="step"><span class="n"></span><div>把音频 CD 放进光驱(没有光驱?USB 外置光驱约 50–100 元),软件 2 秒内自动识别。</div></div>
+      <div class="step"><span class="n"></span><div>勾选音轨、选输出目录,点 <b>开始转换</b>;也可以先直接听一遍。</div></div>
+      <div class="step"><span class="n"></span><div>完成 —— 带 ID3 标签的 320kbps MP3 已就位,任何播放器都能放。</div></div>
+    </div>
+    <pre>:: 也支持命令行整盘抓取
+CDA2MP3Studio.exe --rip --out "D:\Music\我的CD" --bitrate 320
+:: 处理 CUE/WAV 镜像(无需光驱)
+CDA2MP3Studio.exe --image album.cue --rip</pre>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p><b>CDA2MP3 Studio</b> · MIT License · 由 PySide6 + ctypes SPTI + LAME 驱动</p>
+    <p style="margin-top:6px"><a href="https://github.com/Jensen-Yao/cda2mp3">GitHub</a> ·
+    <a href="https://github.com/Jensen-Yao/cda2mp3/releases">下载</a> ·
+    <a href="https://github.com/Jensen-Yao/cda2mp3/issues">反馈问题</a></p>
+  </div>
+</footer>
+
+</body>
+</html>
