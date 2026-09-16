@@ -31,17 +31,20 @@ class Mp3Encoder:
         self._enc.set_channels(channels)
         self._enc.set_quality(2)  # 2=高,接近最慢但质量最好
         self._closed = False
+        self._wrote_any = False
         self._f = open(self._path, "wb")
 
     def write(self, pcm: bytes) -> None:
         if pcm and not self._closed:
             self._f.write(self._enc.encode(pcm))
+            self._wrote_any = True
 
     def close(self) -> None:
         if not self._closed:
             self._closed = True
             try:
-                self._f.write(self._enc.flush())
+                if self._wrote_any:
+                    self._f.write(self._enc.flush())
             finally:
                 self._f.close()
 

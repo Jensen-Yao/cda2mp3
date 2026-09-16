@@ -31,6 +31,8 @@ kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
 
 IOCTL_SCSI_PASS_THROUGH_DIRECT = 0x0004D014
 IOCTL_STORAGE_CHECK_VERIFY = 0x0002D480
+IOCTL_CDROM_RAW_READ = 0x0002403E          # cdrom.sys 原生 CDDA 原始读取
+TRACK_MODE_CDDA = 2
 SCSI_IOCTL_DATA_IN = 1
 SENSE_LEN = 32
 SENSE_OFF = 64
@@ -44,6 +46,14 @@ FILE_SHARE_READ = 0x1
 FILE_SHARE_WRITE = 0x2
 OPEN_EXISTING = 3
 DRIVE_TYPE_CDROM = 5
+
+
+class RAW_READ_INFO(ctypes.Structure):
+    _fields_ = [
+        ("DiskOffset", ctypes.c_longlong),    # 字节偏移(LBA × 2048)
+        ("SectorCount", ctypes.c_ulong),
+        ("TrackMode", ctypes.c_ulong),        # CDDA = 2
+    ]
 
 
 class SCSI_PASS_THROUGH_DIRECT(ctypes.Structure):
@@ -76,6 +86,10 @@ def list_cd_drives() -> list[str]:
     return drives
 
 
+class DiscTransferTooBig(DiscReadError):
+    """单次 SCSI 传输超过适配器/桥接芯片上限(WinError 87),需减小块重试。"""
+
+
 _CDTEXT_TYPES = {0x80: "title", 0x81: "performer", 0x82: "songwriter",
                  0x83: "composer", 0x84: "arranger", 0x85: "message",
                  0x87: "genre", 0x8E: "upc"}
@@ -98,9 +112,26 @@ class SptiDrive(DiscSource):
         self.name = f"{self.letter}: 光驱"
         self.verify_reads = verify
         self._timeout = timeout
+        self.max_transfer_sectors = MAX_SECTORS_PER_READ   # 会被自适应下调
         self._lock = threading.Lock()
         self._handle: int | None = None
         self._open()
+        # 部分 USB 桥接芯片不支持 SCSI 直通抓轨(READ CD 0xBE)但支持系统原生
+        # IOCTL_CDROM_RAW_READ,启动时探测一次自动选择后端
+        self._use_raw = not self._probe_spti_read()
+        if self._use_raw:
+            self.max_transfer_sectors = 64   # cdrom.sys 原始读取可自动分片
+
+    def _probe_spti_read(self) -> bool:
+        old = self._timeout
+        self._timeout = 6
+        try:
+            self._read_cd(0, 1)
+            return True
+        except DiscError:
+            return False
+        finally:
+            self._timeout = old
 
     # ---------- 句柄 ----------
     def _open(self) -> None:
@@ -157,6 +188,8 @@ class SptiDrive(DiscSource):
             if not ok:
                 err = ctypes.get_last_error()
                 key = sense[2] if len(sense) > 2 else -1
+                if err == 87:   # ERROR_INVALID_PARAMETER: 多为传输长度超桥接上限
+                    raise DiscTransferTooBig("SCSI 传输长度超限(WinError 87)")
                 if key == 0x02:  # NOT READY
                     raise DiscError("光驱未就绪(没有放入光盘?)")
                 raise DiscReadError(f"SCSI 命令失败(WinError {err}, sense=0x{key:02x})")
@@ -164,13 +197,39 @@ class SptiDrive(DiscSource):
 
     # ---------- 对外能力 ----------
     def media_present(self) -> bool:
+        ok = kernel32.DeviceIoControl(self._handle, IOCTL_STORAGE_CHECK_VERIFY,
+                                      None, 0, None, 0,
+                                      ctypes.byref(wintypes.DWORD(0)), None)
+        if ok:
+            return True
+        # 部分 USB 桥接芯片对 CHECK_VERIFY 误报“无介质”,用真实 READ TOC 复核
         try:
-            ok = kernel32.DeviceIoControl(self._handle, IOCTL_STORAGE_CHECK_VERIFY,
-                                          None, 0, None, 0,
-                                          ctypes.byref(wintypes.DWORD(0)), None)
-        except (OSError, AttributeError, ValueError):
+            self._toc_raw()
+            return True
+        except DiscError:
             return False
-        return bool(ok)
+
+    def _toc_raw(self) -> bytes:
+        cdb = bytearray(12)
+        cdb[0] = 0x43          # READ TOC
+        cdb[1] = 0x02          # MSF 格式
+        cdb[7], cdb[8] = 0x08, 0x04   # 分配长度 2052
+        data, _ = self._scsi(bytes(cdb), 2052)
+        if len(data) < 4:
+            raise DiscError("读取音轨表失败")
+        return data
+
+    def set_speed(self, kb_per_sec: int) -> bool:
+        """SET CD-ROM SPEED (0xBB) 限速,温和读盘。best-effort,失败返回 False。"""
+        try:
+            cdb = bytearray(12)
+            cdb[0] = 0xBB
+            v = max(176, int(kb_per_sec))          # 176 kB/s ≈ 1x
+            cdb[2], cdb[3] = (v >> 8) & 0xFF, v & 0xFF
+            self._scsi(bytes(cdb), 16)
+            return True
+        except DiscError:
+            return False
 
     def get_toc(self) -> DiscTOC:
         if not self.media_present():
@@ -183,21 +242,15 @@ class SptiDrive(DiscSource):
         return toc
 
     def _read_toc(self) -> DiscTOC:
-        cdb = bytearray(12)
-        cdb[0] = 0x43          # READ TOC
-        cdb[1] = 0x02          # MSF 格式
-        cdb[6] = 0             # 从第 0 轨开始
-        cdb[7], cdb[8] = 0x08, 0x04   # 分配长度 2052
-        data, _ = self._scsi(bytes(cdb), 2052)
-        if len(data) < 4:
-            raise DiscError("读取音轨表失败")
+        data = self._toc_raw()
         first, last = data[2], data[3]
         if not (1 <= first <= last <= 99):
             raise DiscError("音轨表异常,这可能不是音频 CD")
         tracks: list[TrackInfo] = []
         leadout = 0
-        for i in range(first, last + 1):
-            e = data[4 + (i - first) * 8: 4 + (i - first) * 8 + 8]
+        # 条目数 = 轨数 + 1(最后一条是 lead-out,轨号 0xAA)
+        for k in range(last - first + 2):
+            e = data[4 + k * 8: 4 + k * 8 + 8]
             if len(e) < 8:
                 break
             ctrl, tno = e[1], e[2]
@@ -205,6 +258,8 @@ class SptiDrive(DiscSource):
             lba = msf_to_lba(m, s, f)
             if tno == 0xAA:            # lead-out
                 leadout = lba
+                continue
+            if not (1 <= tno <= 99):
                 continue
             tracks.append(TrackInfo(number=tno, start_lba=lba, length_lba=0,
                                     is_audio=(ctrl & 0x04) == 0))
@@ -253,12 +308,21 @@ class SptiDrive(DiscSource):
             t.title = info.get("title", "")
             t.artist = info.get("performer", "") or toc.artist
 
+    MIN_TRANSFER_SECTORS = 4
+
     def read_sectors(self, lba: int, count: int) -> bytes:
         out = bytearray()
         pos, remaining = lba, count
         while remaining > 0:
-            n = min(MAX_SECTORS_PER_READ, remaining)
-            out += self._read_raw(pos, n)
+            n = min(self.max_transfer_sectors, remaining)
+            try:
+                out += self._read_raw(pos, n)
+            except DiscTransferTooBig:
+                if self.max_transfer_sectors <= self.MIN_TRANSFER_SECTORS:
+                    raise DiscReadError(
+                        f"读取 LBA {lba} 失败:传输参数被系统拒绝(即使最小块)")
+                self.max_transfer_sectors = self.max_transfer_sectors // 2
+                continue
             pos += n
             remaining -= n
         return bytes(out)
@@ -267,11 +331,20 @@ class SptiDrive(DiscSource):
         last_err: Exception | None = None
         for _ in range(attempts):
             try:
-                data = self._read_cd(lba, n)
+                if self._use_raw:
+                    data = self._raw_read_os(lba, n)
+                else:
+                    data = self._read_cd(lba, n)
                 if self.verify_reads:
-                    if self._read_cd(lba, n) != data:
+                    if self._use_raw:
+                        data2 = self._raw_read_os(lba, n)
+                    else:
+                        data2 = self._read_cd(lba, n)
+                    if data2 != data:
                         raise DiscReadError("两次读取不一致,盘面可能存在划痕")
                 return data
+            except DiscTransferTooBig:
+                raise                       # 由 read_sectors 调整块大小
             except DiscError as e:
                 last_err = e
                 try:
@@ -279,6 +352,26 @@ class SptiDrive(DiscSource):
                 except DiscError:
                     pass
         raise last_err or DiscReadError("读取失败")
+
+    def _raw_read_os(self, lba: int, n: int) -> bytes:
+        """系统原生原始读取(IOCTL_CDROM_RAW_READ, CDDA 模式)。"""
+        info = RAW_READ_INFO()
+        info.DiskOffset = lba * 2048
+        info.SectorCount = n
+        info.TrackMode = TRACK_MODE_CDDA
+        buf = ctypes.create_string_buffer(n * 2352)
+        ret = wintypes.DWORD(0)
+        ok = kernel32.DeviceIoControl(self._handle, IOCTL_CDROM_RAW_READ,
+                                      ctypes.byref(info), ctypes.sizeof(info),
+                                      buf, n * 2352, ctypes.byref(ret), None)
+        if not ok:
+            err = ctypes.get_last_error()
+            if err == 87:
+                raise DiscTransferTooBig("原始读取长度超限(WinError 87)")
+            raise DiscReadError(f"系统原始读取失败(WinError {err})")
+        if ret.value < n * 2352:
+            raise DiscReadError(f"原始读取不完整(LBA {lba})")
+        return buf.raw[:ret.value]
 
     def _read_cd(self, lba: int, n: int) -> bytes:
         cdb = bytearray(12)

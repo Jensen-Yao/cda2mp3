@@ -14,7 +14,7 @@ import os
 import sys
 
 from . import APP_NAME, __version__
-from .audio.encoder import Mp3Encoder, write_id3_tags
+from .audio.encoder import Mp3Encoder, sanitize_filename, write_id3_tags
 from .cdrom import ImageDisc, SptiDrive, format_duration, list_cd_drives, open_image
 from .config import load_config
 
@@ -46,6 +46,9 @@ def cli_rip(args) -> int:
         letter = letters[0]
         drive = SptiDrive(letter, verify=args.verify or cfg.get("verify", False))
         print(f"使用光驱 {letter}:")
+        if getattr(args, "speed", 0):
+            speed_ok = drive.set_speed(int(args.speed * 176))   # 1x ≈ 176 kB/s
+            print(f"限速 {args.speed:g}x:{'成功' if speed_ok else '驱动器未响应(按默认速度)'}")
     try:
         toc = drive.get_toc()
     except Exception as e:
@@ -63,8 +66,15 @@ def cli_rip(args) -> int:
     print(f"输出:{out_dir} | {args.bitrate} kbps\n")
     ok = fail = 0
     for t in tracks:
-        title = t.title or f"Track {t.number:02d}"
-        name = f"{t.number:02d}. {title}".replace('/', '_') + ".mp3"
+        # 无 CD-Text 时,标题回退为 “专辑名 + 轨号”,文件名回退为 “轨号. 专辑名”
+        title = t.title or (f"{album} {t.number:02d}" if album else f"Track {t.number:02d}")
+        try:
+            name = args.template.format(track=t.number, title=title,
+                                        artist=toc.artist or args.artist_default or "",
+                                        album=album)
+        except (KeyError, IndexError):
+            name = f"{t.number:02d}. {title}"
+        name = sanitize_filename(name) + ".mp3"
         path = os.path.join(out_dir, name)
         print(f"[{t.number:02d}] {title}({format_duration(t.duration_seconds)}) ...",
               end="", flush=True)
@@ -106,6 +116,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--album", help="专辑名(--rip)")
     p.add_argument("--year", default="", help="年份(--rip)")
     p.add_argument("--verify", action="store_true", help="安全模式:双读校验(--rip)")
+    p.add_argument("--speed", type=float, default=0, help="限制光驱速度(倍速,如 8;0=默认),温和读盘")
+    p.add_argument("--template", default="{track:02d}. {title}",
+                   help="文件名模板,可用 {track} {title} {artist} {album}")
+    p.add_argument("--artist-default", default="", help="CD 无元数据时的默认艺术家")
     p.add_argument("--no-tags", action="store_true", help="不写 ID3 标签(--rip)")
     p.add_argument("--version", action="version", version=f"{APP_NAME} v{__version__}")
     args = p.parse_args(argv)
