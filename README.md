@@ -34,6 +34,7 @@
 - 🛡️ **安全模式** —— 每段音频读两遍逐字节校验,老划痕盘也能安心抓
 - 📀 **镜像支持** —— 没有 CD?直接打开 **CUE + WAV/BIN** 整轨镜像抓轨、播放
 - 🖥️ **现代深色 UI** —— PySide6 打造,随插随用,转换进度/日志一目了然
+- 🔌 **USB 光驱深度兼容** —— 自动探测桥接芯片能力,SCSI 直通不可用时无缝切换系统原生 RAW_READ 通道,自适应传输块大小;实测兼容对 0xBE 命令"吞命令"的廉价 USB 桥
 - 📦 **真·单文件** —— PyInstaller 打包,免安装、免驱动依赖、完全离线
 
 ## 🚀 快速开始
@@ -70,6 +71,9 @@ CDA2MP3Studio.exe --rip --tracks 1,3-5 --verify --album "专辑名"
 
 :: 处理 CUE/WAV 镜像(无需光驱)
 CDA2MP3Studio.exe --image album.cue --rip --out D:\out
+
+:: 8 倍速限速温和读盘 + 双读校验(划痕盘/珍贵碟推荐)
+CDA2MP3Studio.exe --rip --speed 8 --verify --out "D:\Music"
 
 :: 图形界面直接打开镜像
 CDA2MP3Studio.exe --image album.cue
